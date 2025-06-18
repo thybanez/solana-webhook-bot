@@ -25,6 +25,7 @@ def webhook():
     # ✅ Log the full incoming payload to Render logs
     print("🚨 Incoming Webhook Payload:")
     print(json.dumps(data, indent=2))  # Pretty print
+    sys.stdout.flush()
 
     if not data:
         return "No data received", 400
