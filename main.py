@@ -11,6 +11,7 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
+BIRDEYE_API_KEY = os.environ.get("BIRDEYE_API_KEY")
 
 # Mapping token addresses to human-readable names
 TOKEN_NAME_MAP = {
@@ -19,6 +20,20 @@ TOKEN_NAME_MAP = {
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": "BLOCKY"
 }
 
+# Get real-time token price from Birdeye API
+def get_token_price(token_address):
+    url = f"https://public-api.birdeye.so/public/price?address={token_address}"
+    headers = {"X-API-KEY": BIRDEYE_API_KEY}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return float(data["data"]["value"])
+    except Exception as e:
+        print(f"⚠️ Error fetching token price: {e}")
+        return None
+
+# Send message via Telegram bot
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
@@ -59,13 +74,20 @@ def webhook():
                     continue
 
                 token = token_transfer.get("tokenAddress")
-                amount = token_transfer.get("amount")
+                raw_amount = token_transfer.get("amount")
 
                 print(f"💡 Detected token: {token}")
                 print(f"🎯 Target tokens: {TARGET_TOKENS}")
 
                 if token not in TARGET_TOKENS:
                     continue
+
+                # Format amount with commas
+                try:
+                    amount_float = float(raw_amount)
+                    amount_formatted = f"{amount_float:,.0f}"
+                except:
+                    amount_formatted = raw_amount
 
                 # Get token name
                 token_name = TOKEN_NAME_MAP.get(token, token)
@@ -78,12 +100,24 @@ def webhook():
                 else:
                     action = "⚪ Transfer (Untracked Wallet)"
 
+                # Get price in SOL and estimate USD
+                price_per_token = get_token_price(token)
+                if price_per_token and amount_float:
+                    est_value_sol = price_per_token * amount_float
+                    sol_formatted = f"{est_value_sol:,.4f}"
+                    # Estimate USD value assuming 1 SOL = 150 USD (or fetch live SOL/USD)
+                    usd_value = est_value_sol * 150
+                    usd_formatted = f"{usd_value:,.2f}"
+                    value_text = f"\nEst. Value: ~{sol_formatted} SOL (~${usd_formatted})"
+                else:
+                    value_text = ""
+
                 message = (
                     f"{action} DETECTED\n"
                     f"From: {source}\n"
                     f"To: {destination}\n"
                     f"Token: {token_name}\n"
-                    f"Amount: {amount}"
+                    f"Amount: {amount_formatted}{value_text}"
                 )
                 send_telegram_message(message)
 
