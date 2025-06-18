@@ -6,10 +6,18 @@ import requests
 
 app = Flask(__name__)
 
+# Environment variables
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
+
+# Mapping token addresses to human-readable names
+TOKEN_NAME_MAP = {
+    "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": "PUFF",
+    "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": "TEMA",
+    "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": "BLOCKY"
+}
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -59,7 +67,10 @@ def webhook():
                 if token not in TARGET_TOKENS:
                     continue
 
-                # 🟢 BUY = wallet received token | 🔴 SELL = wallet sent token
+                # Get token name
+                token_name = TOKEN_NAME_MAP.get(token, token)
+
+                # Determine if it's a BUY or SELL
                 if destination in MONITORED_WALLETS:
                     action = "🟢 BUY"
                 elif source in MONITORED_WALLETS:
@@ -71,7 +82,7 @@ def webhook():
                     f"{action} DETECTED\n"
                     f"From: {source}\n"
                     f"To: {destination}\n"
-                    f"Token: {token}\n"
+                    f"Token: {token_name}\n"
                     f"Amount: {amount}"
                 )
                 send_telegram_message(message)
