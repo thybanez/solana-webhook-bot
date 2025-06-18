@@ -29,9 +29,16 @@ def webhook():
         for event in data.get("events", []):
             source = event.get("fromUserAccount")
             destination = event.get("toUserAccount")
-            token_transfer = event.get("tokenTransfers", [{}])[0]
-            token = token_transfer.get("tokenAddress")
-            amount = token_transfer.get("amount")
+token_transfers = event.get("tokenTransfers", [])
+if token_transfers:
+    for token_transfer in token_transfers:
+        token = token_transfer.get("tokenAddress")
+        amount = token_transfer.get("amount")
+
+        if token in TARGET_TOKENS:
+            message = f"📦 Token Transfer Detected:\nFrom: {source}\nTo: {destination}\nToken: {token}\nAmount: {amount}"
+            send_telegram_message(message)
+
             
             # ✅ Only alert for tokens you're tracking
             if token in TARGET_TOKENS:
