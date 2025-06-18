@@ -9,11 +9,13 @@ app = Flask(__name__)
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
+MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    requests.post(url, json=payload)
+    response = requests.post(url, json=payload)
+    print(f"📬 Telegram response: {response.status_code} {response.text}")
 
 @app.route("/")
 def index():
@@ -31,25 +33,7 @@ def webhook():
         if not data:
             return "No data received", 400
 
-        # Return early just for this test
-        return "Received and logged", 200
-
-    except Exception as e:
-        error_message = f"⚠️ Exception during webhook: {str(e)}"
-        print(error_message)
-        send_telegram_message(error_message)
-        return error_message, 500
-
-
-    try:
-        # Check the structure of the incoming data
-        if isinstance(data, dict):
-            events = data.get("events", [])
-        elif isinstance(data, list):
-            events = data
-        else:
-            send_telegram_message("⚠️ Unexpected webhook format. Data is neither dict nor list.")
-            return "Unexpected format", 400
+        events = data.get("events", []) if isinstance(data, dict) else data
 
         for event in events:
             if not isinstance(event, dict):
@@ -69,16 +53,34 @@ def webhook():
                 token = token_transfer.get("tokenAddress")
                 amount = token_transfer.get("amount")
 
-                if token in TARGET_TOKENS:
-                    message = (
-                        f"📦 Token Transfer Detected:\n"
-                        f"From: {source}\nTo: {destination}\n"
-                        f"Token: {token}\nAmount: {amount}"
-                    )
-                    send_telegram_message(message)
+                print(f"💡 Detected token: {token}")
+                print(f"🎯 Target tokens: {TARGET_TOKENS}")
+
+                if token not in TARGET_TOKENS:
+                    continue
+
+                # 🟢 BUY = wallet received token | 🔴 SELL = wallet sent token
+                if destination in MONITORED_WALLETS:
+                    action = "🟢 BUY"
+                elif source in MONITORED_WALLETS:
+                    action = "🔴 SELL"
+                else:
+                    action = "⚪ Transfer (Untracked Wallet)"
+
+                message = (
+                    f"{action} DETECTED\n"
+                    f"From: {source}\n"
+                    f"To: {destination}\n"
+                    f"Token: {token}\n"
+                    f"Amount: {amount}"
+                )
+                send_telegram_message(message)
 
     except Exception as e:
-        send_telegram_message(f"⚠️ Error processing webhook: {str(e)}")
+        error_message = f"⚠️ Error processing webhook: {str(e)}"
+        print(error_message)
+        send_telegram_message(error_message)
+        return error_message, 500
 
     return "OK", 200
 
