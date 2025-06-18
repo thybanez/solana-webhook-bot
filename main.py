@@ -26,9 +26,16 @@ def webhook():
         return "No data received", 400
 
     try:
-        events = data.get("events", [])
+        # Check the structure of the incoming data
+        if isinstance(data, dict):
+            events = data.get("events", [])
+        elif isinstance(data, list):
+            events = data
+        else:
+            send_telegram_message("⚠️ Unexpected webhook format. Data is neither dict nor list.")
+            return "Unexpected format", 400
+
         for event in events:
-            # 🚧 Ensure each event is a dictionary
             if not isinstance(event, dict):
                 continue
 
@@ -36,19 +43,16 @@ def webhook():
             destination = event.get("toUserAccount")
             token_transfers = event.get("tokenTransfers", [])
 
-            # 🚧 Ensure token_transfers is a list and not empty
             if not isinstance(token_transfers, list) or not token_transfers:
                 continue
 
             for token_transfer in token_transfers:
-                # 🚧 Ensure each transfer is a dictionary
                 if not isinstance(token_transfer, dict):
                     continue
 
                 token = token_transfer.get("tokenAddress")
                 amount = token_transfer.get("amount")
 
-                # ✅ Only send alert if token matches
                 if token in TARGET_TOKENS:
                     message = (
                         f"📦 Token Transfer Detected:\n"
