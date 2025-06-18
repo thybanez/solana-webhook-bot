@@ -20,15 +20,25 @@ def index():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
+    try:
+        data = request.get_json(force=True, silent=False)
 
-    # ✅ Log the full incoming payload to Render logs
-    print("🚨 Incoming Webhook Payload:")
-    print(json.dumps(data, indent=2))  # Pretty print
-    sys.stdout.flush()
+        print("🚨 Incoming Webhook Payload:")
+        print(json.dumps(data, indent=2))
+        sys.stdout.flush()
 
-    if not data:
-        return "No data received", 400
+        if not data:
+            return "No data received", 400
+
+        # Return early just for this test
+        return "Received and logged", 200
+
+    except Exception as e:
+        error_message = f"⚠️ Exception during webhook: {str(e)}"
+        print(error_message)
+        send_telegram_message(error_message)
+        return error_message, 500
+
 
     try:
         # Check the structure of the incoming data
