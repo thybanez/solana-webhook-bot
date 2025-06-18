@@ -22,6 +22,10 @@ def index():
 def webhook():
     data = request.get_json()
 
+    # ✅ Log the full incoming payload to Render logs
+    print("🚨 Incoming Webhook Payload:")
+    print(json.dumps(data, indent=2))  # Pretty print
+
     if not data:
         return "No data received", 400
 
