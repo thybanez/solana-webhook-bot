@@ -26,21 +26,35 @@ def webhook():
         return "No data received", 400
 
     try:
-        for event in data.get("events", []):
+        events = data.get("events", [])
+        for event in events:
+            # 🚧 Ensure each event is a dictionary
+            if not isinstance(event, dict):
+                continue
+
             source = event.get("fromUserAccount")
             destination = event.get("toUserAccount")
             token_transfers = event.get("tokenTransfers", [])
 
-            if not token_transfers:
+            # 🚧 Ensure token_transfers is a list and not empty
+            if not isinstance(token_transfers, list) or not token_transfers:
                 continue
 
             for token_transfer in token_transfers:
+                # 🚧 Ensure each transfer is a dictionary
+                if not isinstance(token_transfer, dict):
+                    continue
+
                 token = token_transfer.get("tokenAddress")
                 amount = token_transfer.get("amount")
 
-                # ✅ Only alert for tokens you're tracking
+                # ✅ Only send alert if token matches
                 if token in TARGET_TOKENS:
-                    message = f"📦 Token Transfer Detected:\nFrom: {source}\nTo: {destination}\nToken: {token}\nAmount: {amount}"
+                    message = (
+                        f"📦 Token Transfer Detected:\n"
+                        f"From: {source}\nTo: {destination}\n"
+                        f"Token: {token}\nAmount: {amount}"
+                    )
                     send_telegram_message(message)
 
     except Exception as e:
