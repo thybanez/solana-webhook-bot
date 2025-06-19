@@ -90,7 +90,7 @@ def webhook():
                 decimals = TOKEN_DECIMALS.get(token, 0)
                 try:
                     amount_float = float(raw_amount) / (10 ** decimals)
-                    amount_formatted = f"{amount_float:,.6f}".rstrip('0').rstrip('.')
+                    amount_formatted = f"{int(raw_amount):,}"  # Show unadjusted value for Telegram
                 except:
                     amount_float = 0.0
                     amount_formatted = raw_amount
@@ -109,7 +109,7 @@ def webhook():
                 token_price_sol = get_token_price(token)
                 sol_usd_price = get_token_price(SOL_ADDRESS)
 
-                print(f"📈 {token_name} price in SOL: {token_price_sol}")
+                print(f"📈 {token_name} price in SOL: {price_per_token}")
                 print(f"💵 SOL price in USD: {sol_usd_price}")
                 sys.stdout.flush()
 
