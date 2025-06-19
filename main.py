@@ -7,13 +7,12 @@ import requests
 
 app = Flask(__name__)
 
-# Env variables
+# Environment variables
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 BIRDEYE_API_KEY = os.environ["BIRDEYE_API_KEY"]
-COINGECKO_API_KEY = os.environ["COINGECKO_API_KEY"]
 
 # Token metadata
 TOKEN_NAME_MAP = {
@@ -28,7 +27,7 @@ TOKEN_DECIMALS = {
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": 9
 }
 
-# Constants
+SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
 SOL_CACHE_DURATION = 1800  # 30 minutes
 
 # Caches
@@ -37,7 +36,29 @@ last_sol_fetch_time = 0
 token_price_cache = {}
 api_call_count = 0
 
-# Fetch token price from Birdeye
+# Get SOL/USD price from Birdeye
+def get_sol_usd_price():
+    global cached_sol_price, last_sol_fetch_time
+    now = time.time()
+    if cached_sol_price and (now - last_sol_fetch_time) < SOL_CACHE_DURATION:
+        return cached_sol_price
+
+    url = f"https://public-api.birdeye.so/defi/price?address={SOL_TOKEN_ADDRESS}"
+    headers = {"X-API-KEY": BIRDEYE_API_KEY}
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        price = float(response.json()["data"]["value"])
+        cached_sol_price = price
+        last_sol_fetch_time = now
+        print(f"🌐 Fetched SOL price from Birdeye: ${cached_sol_price}")
+        return price
+    except Exception as e:
+        print(f"⚠️ Error fetching SOL price from Birdeye: {e}")
+        return None
+
+# Get token/SOL price from Birdeye
 def fetch_price_from_birdeye(token_address):
     global api_call_count
 
@@ -58,30 +79,7 @@ def fetch_price_from_birdeye(token_address):
         print(f"⚠️ Error fetching price for {token_address}: {e}")
         return None
 
-# Fetch SOL/USD from CoinGecko
-def get_sol_usd_price():
-    global cached_sol_price, last_sol_fetch_time
-    now = time.time()
-    if cached_sol_price and (now - last_sol_fetch_time) < SOL_CACHE_DURATION:
-        return cached_sol_price
-
-    url = "https://api.coingecko.com/api/v3/simple/price"
-    params = {"ids": "solana", "vs_currencies": "usd"}
-
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        price = response.json().get("solana", {}).get("usd")
-        if price:
-            cached_sol_price = float(price)
-            last_sol_fetch_time = now
-            print(f"🌐 Fetched SOL price from CoinGecko: ${cached_sol_price}")
-            return cached_sol_price
-    except Exception as e:
-        print(f"⚠️ Error fetching SOL price from CoinGecko: {e}")
-        return None
-
-# Send Telegram
+# Send Telegram message
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
