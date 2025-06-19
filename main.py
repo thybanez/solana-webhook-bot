@@ -22,7 +22,7 @@ TOKEN_NAME_MAP = {
 
 # Get real-time token price from Birdeye API
 def get_token_price(token_address):
-    url = f"https://public-api.birdeye.so/public/price?address={token_address}&chain=solana"
+    url = f"https://public-api.birdeye.so/defi/price?address={token_address}
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
     try:
         response = requests.get(url, headers=headers)
