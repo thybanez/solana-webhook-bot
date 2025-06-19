@@ -1,149 +1,128 @@
 import os
 import json
 import sys
-import time
 from flask import Flask, request
 import requests
 
 app = Flask(__name__)
 
+# Environment variables
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
-BIRDEYE_API_KEY = os.environ["BIRDEYE_API_KEY"]
+BIRDEYE_API_KEY = os.environ.get("BIRDEYE_API_KEY")
 
-TOKEN_NAME_MAP = {
-    "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": "PUFF",
-    "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": "TEMA",
-    "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": "BLOCKY"
+# Token config: name + decimals
+TOKEN_INFO = {
+    "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": {"name": "PUFF", "decimals": 6},
+    "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": {"name": "TEMA", "decimals": 6},
+    "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": {"name": "BLOCKY", "decimals": 6}
 }
 
-TOKEN_DECIMALS = {
-    "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": 6,
-    "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": 6,
-    "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": 9
-}
-
-SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
-SOL_CACHE_DURATION = 1800
-
-cached_sol_price = None
-last_sol_fetch_time = 0
-token_price_cache = {}
-api_call_count = 0
-
-def get_sol_usd_price():
-    global cached_sol_price, last_sol_fetch_time
-    now = time.time()
-    if cached_sol_price and (now - last_sol_fetch_time) < SOL_CACHE_DURATION:
-        return cached_sol_price
-
-    url = f"https://public-api.birdeye.so/defi/price?address={SOL_TOKEN_ADDRESS}"
-    headers = {"X-API-KEY": BIRDEYE_API_KEY}
-
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        price = float(response.json()["data"]["value"])
-        cached_sol_price = price
-        last_sol_fetch_time = now
-        return price
-    except Exception as e:
-        print(f"⚠️ Error fetching SOL price: {e}")
-        return None
-
-def fetch_price_from_birdeye(token_address):
-    global api_call_count
-
-    if token_address in token_price_cache:
-        return token_price_cache[token_address]
-
-    url = f"https://public-api.birdeye.so/defi/price?address={token_address}"
+# Get real-time token price from Birdeye API
+def get_token_price(token_address):
+    url = f"https://public-api.birdeye.so/public/price?address={token_address}"
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        price = float(response.json()["data"]["value"])
-        token_price_cache[token_address] = price
-        api_call_count += 1
-        return price
+        data = response.json()
+        return float(data["data"]["value"])
     except Exception as e:
-        print(f"⚠️ Error fetching price for {token_address}: {e}")
+        print(f"⚠️ Error fetching token price: {e}")
         return None
 
+# Send message via Telegram bot
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    requests.post(url, json=payload)
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    response = requests.post(url, json=payload)
+    print(f"📬 Telegram response: {response.status_code} {response.text}")
 
 @app.route("/")
 def index():
-    return "✅ Bot is running."
+    return "✅ Solana bot is running."
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True, silent=False)
+
         print("🚨 Incoming Webhook Payload:")
         print(json.dumps(data, indent=2))
         sys.stdout.flush()
 
-        transactions = data if isinstance(data, list) else [data]
+        if not data:
+            return "No data received", 400
 
-        for tx in transactions:
-            for transfer in tx.get("tokenTransfers", []):
-                token = transfer.get("mint")
-                source = transfer.get("fromUserAccount")
-                dest = transfer.get("toUserAccount")
-                raw_amount = transfer.get("tokenAmount")
+        events = data.get("events", []) if isinstance(data, dict) else data
+
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+
+            source = event.get("fromUserAccount")
+            destination = event.get("toUserAccount")
+            token_transfers = event.get("tokenTransfers", [])
+
+            if not isinstance(token_transfers, list) or not token_transfers:
+                continue
+
+            for token_transfer in token_transfers:
+                if not isinstance(token_transfer, dict):
+                    continue
+
+                token = token_transfer.get("tokenAddress")
+                raw_amount = token_transfer.get("amount")
 
                 if token not in TARGET_TOKENS:
                     continue
 
-                token_name = TOKEN_NAME_MAP.get(token, token)
-                decimals = TOKEN_DECIMALS.get(token, 0)
-                raw_int = int(float(raw_amount) * (10 ** decimals))
-                amount_float = raw_int / (10 ** decimals)
-                amount_display = f"{raw_int:,}"
+                token_info = TOKEN_INFO.get(token, {})
+                token_name = token_info.get("name", token)
+                decimals = token_info.get("decimals", 0)
 
-                # Direction
-                if dest in MONITORED_WALLETS:
-                    action = "🟢 *BUY*"
+                try:
+                    amount_float = float(raw_amount) / (10 ** decimals)
+                    amount_formatted = f"{amount_float:,.{decimals}f}".rstrip('0').rstrip('.')
+                except:
+                    amount_float = 0
+                    amount_formatted = raw_amount
+
+                # Determine action type
+                if destination in MONITORED_WALLETS:
+                    action = "🟢 BUY"
                 elif source in MONITORED_WALLETS:
-                    action = "🔴 *SELL*"
+                    action = "🔴 SELL"
                 else:
-                    action = "⚪ *Transfer*"
+                    action = "⚪ Transfer (Untracked Wallet)"
 
-                token_price_sol = fetch_price_from_birdeye(token)
-                sol_price_usd = get_sol_usd_price()
-
-                if token_price_sol and sol_price_usd:
-                    value_sol = token_price_sol * amount_float
-                    value_usd = value_sol * sol_price_usd
-                    value_text = f"\n*Est. Value:* ~{value_sol:,.4f} SOL (~\\${value_usd:,.2f})"
+                # Get price and estimate value
+                price_per_token = get_token_price(token)
+                if price_per_token and amount_float:
+                    est_value_sol = price_per_token * amount_float
+                    sol_formatted = f"{est_value_sol:,.4f}"
+                    usd_value = est_value_sol * 150  # adjust if you want live SOL price
+                    usd_formatted = f"{usd_value:,.2f}"
+                    value_text = f"\nEst. Value: ~{sol_formatted} SOL (~${usd_formatted})"
                 else:
-                    value_text = "\n*Est. Value:* N/A"
+                    value_text = ""
 
                 message = (
-                    f"{action}\n"
-                    f"*From:* `{source}`\n"
-                    f"*To:* `{dest}`\n"
-                    f"*Token:* `{token_name}`\n"
-                    f"*Amount:* `{amount_display}`{value_text}"
+                    f"{action} DETECTED\n"
+                    f"From: {source}\n"
+                    f"To: {destination}\n"
+                    f"Token: {token_name}\n"
+                    f"Amount: {amount_formatted}{value_text}"
                 )
-
                 send_telegram_message(message)
 
     except Exception as e:
-        error = f"⚠️ Error: {str(e)}"
-        print(error)
-        send_telegram_message(error)
-        return error, 500
+        error_message = f"⚠️ Error processing webhook: {str(e)}"
+        print(error_message)
+        send_telegram_message(error_message)
+        return error_message, 500
 
     return "OK", 200
 
