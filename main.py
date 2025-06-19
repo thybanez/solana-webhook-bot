@@ -69,7 +69,7 @@ def get_sol_usd_price():
     params = {"ids": "solana", "vs_currencies": "usd"}
 
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, params=params)
         response.raise_for_status()
         price = response.json().get("solana", {}).get("usd")
         if price:
