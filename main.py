@@ -30,13 +30,11 @@ TOKEN_DECIMALS = {
 SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
 SOL_CACHE_DURATION = 1800  # 30 minutes
 
-# Caches
 cached_sol_price = None
 last_sol_fetch_time = 0
 token_price_cache = {}
 api_call_count = 0
 
-# Get SOL/USD price from Birdeye
 def get_sol_usd_price():
     global cached_sol_price, last_sol_fetch_time
     now = time.time()
@@ -58,7 +56,6 @@ def get_sol_usd_price():
         print(f"⚠️ Error fetching SOL price from Birdeye: {e}")
         return None
 
-# Get token/SOL price from Birdeye
 def fetch_price_from_birdeye(token_address):
     global api_call_count
 
@@ -79,7 +76,6 @@ def fetch_price_from_birdeye(token_address):
         print(f"⚠️ Error fetching price for {token_address}: {e}")
         return None
 
-# Send Telegram message
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
@@ -98,30 +94,25 @@ def webhook():
         print(json.dumps(data, indent=2))
         sys.stdout.flush()
 
-        for event in data.get("events", []):
-            source = event.get("fromUserAccount")
-            dest = event.get("toUserAccount")
-            transfers = event.get("tokenTransfers", [])
+        transactions = data if isinstance(data, list) else [data]
 
-            for t in transfers:
-                token = t.get("tokenAddress")
-                raw_amount = t.get("amount")
+        for tx in transactions:
+            for transfer in tx.get("tokenTransfers", []):
+                token = transfer.get("mint")
+                source = transfer.get("fromUserAccount")
+                dest = transfer.get("toUserAccount")
+                raw_amount = transfer.get("tokenAmount")
 
                 if token not in TARGET_TOKENS:
                     continue
 
                 token_name = TOKEN_NAME_MAP.get(token, token)
                 decimals = TOKEN_DECIMALS.get(token, 0)
+                raw_int = int(float(raw_amount) * (10 ** decimals))
+                amount_float = raw_int / (10 ** decimals)
+                amount_display = f"{raw_int:,}"
 
-                try:
-                    raw_int = int(raw_amount)
-                    amount_float = raw_int / (10 ** decimals)
-                    amount_display = f"{raw_int:,}"
-                except:
-                    amount_float = 0
-                    amount_display = raw_amount
-
-                # BUY/SELL/TRANSFER label
+                # Determine direction
                 if dest in MONITORED_WALLETS:
                     action = "🟢 BUY"
                 elif source in MONITORED_WALLETS:
@@ -131,10 +122,6 @@ def webhook():
 
                 token_price_sol = fetch_price_from_birdeye(token)
                 sol_price_usd = get_sol_usd_price()
-
-                print(f"📈 {token_name} price (SOL): {token_price_sol}")
-                print(f"💰 SOL price (USD): {sol_price_usd}")
-                sys.stdout.flush()
 
                 if token_price_sol and sol_price_usd:
                     value_sol = token_price_sol * amount_float
