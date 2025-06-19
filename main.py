@@ -13,14 +13,22 @@ TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 BIRDEYE_API_KEY = os.environ.get("BIRDEYE_API_KEY")
 
-# Mapping token addresses to human-readable names
+# Token mapping and decimals
 TOKEN_NAME_MAP = {
     "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": "PUFF",
     "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": "TEMA",
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": "BLOCKY"
 }
 
-# Get real-time token price from Birdeye API
+TOKEN_DECIMALS = {
+    "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": 6,
+    "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": 6,
+    "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": 9
+}
+
+SOL_ADDRESS = "So11111111111111111111111111111111111111112"
+
+# Price fetching using /defi endpoint
 def get_token_price(token_address):
     url = f"https://public-api.birdeye.so/defi/price?address={token_address}"
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
@@ -30,10 +38,9 @@ def get_token_price(token_address):
         data = response.json()
         return float(data["data"]["value"])
     except Exception as e:
-        print(f"⚠️ Error fetching token price: {e}")
+        print(f"⚠️ Error fetching price for {token_address}: {e}")
         return None
 
-# Send message via Telegram bot
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
@@ -49,7 +56,7 @@ def webhook():
     try:
         data = request.get_json(force=True, silent=False)
 
-        print("🚨 Incoming Webhook Payload:")
+        print("\n🚨 Incoming Webhook Payload:")
         print(json.dumps(data, indent=2))
         sys.stdout.flush()
 
@@ -76,23 +83,21 @@ def webhook():
                 token = token_transfer.get("tokenAddress")
                 raw_amount = token_transfer.get("amount")
 
-                print(f"💡 Detected token: {token}")
-                print(f"🎯 Target tokens: {TARGET_TOKENS}")
-
                 if token not in TARGET_TOKENS:
                     continue
 
-                # Format amount with commas
+                # Normalize amount
+                decimals = TOKEN_DECIMALS.get(token, 0)
                 try:
-                    amount_float = float(raw_amount)
-                    amount_formatted = f"{amount_float:,.0f}"
+                    amount_float = float(raw_amount) / (10 ** decimals)
+                    amount_formatted = f"{amount_float:,.6f}".rstrip('0').rstrip('.')
                 except:
+                    amount_float = 0.0
                     amount_formatted = raw_amount
 
-                # Get token name
                 token_name = TOKEN_NAME_MAP.get(token, token)
 
-                # Determine if it's a BUY or SELL
+                # Determine buy/sell
                 if destination in MONITORED_WALLETS:
                     action = "🟢 BUY"
                 elif source in MONITORED_WALLETS:
@@ -100,17 +105,22 @@ def webhook():
                 else:
                     action = "⚪ Transfer (Untracked Wallet)"
 
-                # Get price in SOL and estimate USD
-                price_per_token = get_token_price(token)
-                if price_per_token and amount_float:
-                    est_value_sol = price_per_token * amount_float
+                # Price fetching
+                token_price_sol = get_token_price(token)
+                sol_usd_price = get_token_price(SOL_ADDRESS)
+
+                print(f"📈 {token_name} price in SOL: {token_price_sol}")
+                print(f"💵 SOL price in USD: {sol_usd_price}")
+                sys.stdout.flush()
+
+                if token_price_sol and sol_usd_price and amount_float:
+                    est_value_sol = token_price_sol * amount_float
+                    est_value_usd = est_value_sol * sol_usd_price
                     sol_formatted = f"{est_value_sol:,.4f}"
-                    # Estimate USD value assuming 1 SOL = 150 USD (or fetch live SOL/USD)
-                    usd_value = est_value_sol * 150
-                    usd_formatted = f"{usd_value:,.2f}"
+                    usd_formatted = f"{est_value_usd:,.2f}"
                     value_text = f"\nEst. Value: ~{sol_formatted} SOL (~${usd_formatted})"
                 else:
-                    value_text = ""
+                    value_text = "\nEst. Value: N/A"
 
                 message = (
                     f"{action} DETECTED\n"
@@ -119,6 +129,7 @@ def webhook():
                     f"Token: {token_name}\n"
                     f"Amount: {amount_formatted}{value_text}"
                 )
+
                 send_telegram_message(message)
 
     except Exception as e:
