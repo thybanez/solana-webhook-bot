@@ -7,14 +7,12 @@ import requests
 
 app = Flask(__name__)
 
-# Environment variables
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 BIRDEYE_API_KEY = os.environ["BIRDEYE_API_KEY"]
 
-# Token metadata
 TOKEN_NAME_MAP = {
     "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": "PUFF",
     "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": "TEMA",
@@ -28,7 +26,7 @@ TOKEN_DECIMALS = {
 }
 
 SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
-SOL_CACHE_DURATION = 1800  # 30 minutes
+SOL_CACHE_DURATION = 1800
 
 cached_sol_price = None
 last_sol_fetch_time = 0
@@ -50,10 +48,9 @@ def get_sol_usd_price():
         price = float(response.json()["data"]["value"])
         cached_sol_price = price
         last_sol_fetch_time = now
-        print(f"🌐 Fetched SOL price from Birdeye: ${cached_sol_price}")
         return price
     except Exception as e:
-        print(f"⚠️ Error fetching SOL price from Birdeye: {e}")
+        print(f"⚠️ Error fetching SOL price: {e}")
         return None
 
 def fetch_price_from_birdeye(token_address):
@@ -70,7 +67,6 @@ def fetch_price_from_birdeye(token_address):
         price = float(response.json()["data"]["value"])
         token_price_cache[token_address] = price
         api_call_count += 1
-        print(f"📊 API calls used: {api_call_count}")
         return price
     except Exception as e:
         print(f"⚠️ Error fetching price for {token_address}: {e}")
@@ -78,9 +74,12 @@ def fetch_price_from_birdeye(token_address):
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    response = requests.post(url, json=payload)
-    print(f"📬 Telegram: {response.status_code} {response.text}")
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    requests.post(url, json=payload)
 
 @app.route("/")
 def index():
@@ -112,13 +111,13 @@ def webhook():
                 amount_float = raw_int / (10 ** decimals)
                 amount_display = f"{raw_int:,}"
 
-                # Determine direction
+                # Direction
                 if dest in MONITORED_WALLETS:
-                    action = "🟢 BUY"
+                    action = "🟢 *BUY*"
                 elif source in MONITORED_WALLETS:
-                    action = "🔴 SELL"
+                    action = "🔴 *SELL*"
                 else:
-                    action = "⚪ Transfer"
+                    action = "⚪ *Transfer*"
 
                 token_price_sol = fetch_price_from_birdeye(token)
                 sol_price_usd = get_sol_usd_price()
@@ -126,16 +125,16 @@ def webhook():
                 if token_price_sol and sol_price_usd:
                     value_sol = token_price_sol * amount_float
                     value_usd = value_sol * sol_price_usd
-                    value_text = f"\nEst. Value: ~{value_sol:,.4f} SOL (~${value_usd:,.2f})"
+                    value_text = f"\n*Est. Value:* ~{value_sol:,.4f} SOL (~\\${value_usd:,.2f})"
                 else:
-                    value_text = "\nEst. Value: N/A"
+                    value_text = "\n*Est. Value:* N/A"
 
                 message = (
-                    f"{action} DETECTED\n"
-                    f"From: {source}\n"
-                    f"To: {dest}\n"
-                    f"Token: {token_name}\n"
-                    f"Amount: {amount_display}{value_text}"
+                    f"{action}\n"
+                    f"*From:* `{source}`\n"
+                    f"*To:* `{dest}`\n"
+                    f"*Token:* `{token_name}`\n"
+                    f"*Amount:* `{amount_display}`{value_text}"
                 )
 
                 send_telegram_message(message)
