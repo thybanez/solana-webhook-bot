@@ -66,7 +66,6 @@ def get_sol_usd_price():
         return cached_sol_price
 
     url = "https://api.coingecko.com/api/v3/simple/price"
-    headers = {"x-cg-api-key": COINGECKO_API_KEY}
     params = {"ids": "solana", "vs_currencies": "usd"}
 
     try:
