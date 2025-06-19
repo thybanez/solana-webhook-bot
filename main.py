@@ -14,49 +14,64 @@ TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 BIRDEYE_API_KEY = os.environ["BIRDEYE_API_KEY"]
 
-# Token display name
+# Token metadata
 TOKEN_NAME_MAP = {
     "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": "PUFF",
     "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": "TEMA",
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": "BLOCKY"
 }
 
-# Token decimals
 TOKEN_DECIMALS = {
     "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": 6,
     "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": 6,
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": 9
 }
 
-# SOL price caching
+# Constants
+SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
+SOL_CACHE_DURATION = 1800  # 30 minutes
+
+# Caches
 cached_sol_price = None
 last_sol_fetch_time = 0
-SOL_TOKEN_ADDRESS = "So11111111111111111111111111111111111111112"
-SOL_CACHE_DURATION = 300  # seconds (5 minutes)
+token_price_cache = {}
+api_call_count = 0
 
+# Fetch token/SOL price from Birdeye
 def fetch_price_from_birdeye(token_address):
+    global api_call_count
+
+    # Use cache for token prices
+    if token_address in token_price_cache:
+        return token_price_cache[token_address]
+
     url = f"https://public-api.birdeye.so/defi/price?address={token_address}"
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        return float(response.json()["data"]["value"])
+        price = float(response.json()["data"]["value"])
+        token_price_cache[token_address] = price
+        api_call_count += 1
+        print(f"📊 API calls used: {api_call_count}")
+        return price
     except Exception as e:
         print(f"⚠️ Error fetching price for {token_address}: {e}")
         return None
 
+# Cache SOL price separately
 def get_sol_usd_price():
     global cached_sol_price, last_sol_fetch_time
     now = time.time()
-    if cached_sol_price and now - last_sol_fetch_time < SOL_CACHE_DURATION:
+    if cached_sol_price and (now - last_sol_fetch_time) < SOL_CACHE_DURATION:
         return cached_sol_price
-    else:
-        price = fetch_price_from_birdeye(SOL_TOKEN_ADDRESS)
-        if price:
-            cached_sol_price = price
-            last_sol_fetch_time = now
-        return price
+    price = fetch_price_from_birdeye(SOL_TOKEN_ADDRESS)
+    if price:
+        cached_sol_price = price
+        last_sol_fetch_time = now
+    return cached_sol_price
 
+# Send Telegram
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
@@ -71,8 +86,7 @@ def index():
 def webhook():
     try:
         data = request.get_json(force=True)
-
-        print("🚨 Webhook Payload:")
+        print("🚨 Incoming Webhook Payload:")
         print(json.dumps(data, indent=2))
         sys.stdout.flush()
 
@@ -88,11 +102,9 @@ def webhook():
                 if token not in TARGET_TOKENS:
                     continue
 
-                # Token metadata
                 token_name = TOKEN_NAME_MAP.get(token, token)
                 decimals = TOKEN_DECIMALS.get(token, 0)
 
-                # Show raw amount (e.g. 123456), but use decimals for calc
                 try:
                     raw_int = int(raw_amount)
                     amount_float = raw_int / (10 ** decimals)
@@ -101,7 +113,7 @@ def webhook():
                     amount_float = 0
                     amount_display = raw_amount
 
-                # Determine type
+                # BUY/SELL/TRANSFER label
                 if dest in MONITORED_WALLETS:
                     action = "🟢 BUY"
                 elif source in MONITORED_WALLETS:
@@ -109,17 +121,16 @@ def webhook():
                 else:
                     action = "⚪ Transfer"
 
-                # Get prices
                 token_price_sol = fetch_price_from_birdeye(token)
-                sol_usd_price = get_sol_usd_price()
+                sol_price_usd = get_sol_usd_price()
 
                 print(f"📈 {token_name} price (SOL): {token_price_sol}")
-                print(f"💰 SOL price (USD): {sol_usd_price}")
+                print(f"💰 SOL price (USD): {sol_price_usd}")
                 sys.stdout.flush()
 
-                if token_price_sol and sol_usd_price:
+                if token_price_sol and sol_price_usd:
                     value_sol = token_price_sol * amount_float
-                    value_usd = value_sol * sol_usd_price
+                    value_usd = value_sol * sol_price_usd
                     value_text = f"\nEst. Value: ~{value_sol:,.4f} SOL (~${value_usd:,.2f})"
                 else:
                     value_text = "\nEst. Value: N/A"
@@ -135,10 +146,10 @@ def webhook():
                 send_telegram_message(message)
 
     except Exception as e:
-        err = f"⚠️ Error: {str(e)}"
-        print(err)
-        send_telegram_message(err)
-        return err, 500
+        error = f"⚠️ Error: {str(e)}"
+        print(error)
+        send_telegram_message(error)
+        return error, 500
 
     return "OK", 200
 
