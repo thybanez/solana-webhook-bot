@@ -109,7 +109,7 @@ def webhook():
                 token_price_sol = get_token_price(token)
                 sol_usd_price = get_token_price(SOL_ADDRESS)
 
-                print(f"📈 {token_name} price in SOL: {price_per_token}")
+                print(f"📈 {token_name} price in SOL: {token_price_sol}")
                 print(f"💵 SOL price in USD: {sol_usd_price}")
                 sys.stdout.flush()
 
