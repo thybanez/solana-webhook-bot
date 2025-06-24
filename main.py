@@ -13,7 +13,7 @@ TARGET_TOKENS = os.environ.get("TARGET_TOKEN_ADDRESSES", "").split(",")
 MONITORED_WALLETS = os.environ.get("MONITORED_WALLETS", "").split(",")
 BIRDEYE_API_KEY = os.environ.get("BIRDEYE_API_KEY")
 
-# Token config: name + decimals
+# Token config: name + decimals (decimals retained only for price context)
 TOKEN_INFO = {
     "5241BVJpTDscdFM5bTmeuchBcjXN5sasBywyF7onkJZP": {"name": "PUFF", "decimals": 6},
     "CnfshwmvDqLrB1jSLF7bLJ3iZF5u354WRFGPBmGz4uyf": {"name": "TEMA", "decimals": 6},
@@ -82,13 +82,12 @@ def webhook():
 
                 token_info = TOKEN_INFO.get(token, {})
                 token_name = token_info.get("name", token)
-                decimals = token_info.get("decimals", 0)
 
                 try:
-                    amount_float = float(raw_amount) / (10 ** decimals)
-                    amount_formatted = f"{amount_float:,.0f}"  # No decimals, comma format
+                    amount_int = int(raw_amount)
+                    amount_formatted = f"{amount_int:,}"
                 except:
-                    amount_float = 0
+                    amount_int = 0
                     amount_formatted = raw_amount
 
                 # Determine action type
@@ -101,8 +100,8 @@ def webhook():
 
                 # Get price and estimate value
                 price_per_token = get_token_price(token)
-                if price_per_token and amount_float:
-                    usd_value = price_per_token * amount_float
+                if price_per_token and amount_int:
+                    usd_value = price_per_token * amount_int
                     price_formatted = f"{price_per_token:,.6f}"
                     usd_formatted = f"{usd_value:,.2f}"
                     value_text = (
