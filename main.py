@@ -22,7 +22,7 @@ TOKEN_INFO = {
 
 # Fetch price from Birdeye
 def get_token_price(token_address):
-    url = f"https://public-api.birdeye.so/public/price?address={token_address}"
+    url = f"https://public-api.birdeye.so/defi/price?address={token_address}"
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
     try:
         response = requests.get(url, headers=headers)
