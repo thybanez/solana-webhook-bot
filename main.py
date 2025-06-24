@@ -20,7 +20,7 @@ TOKEN_INFO = {
     "CsZFPqMei7DXBfXfxCydAPBN9y5wzrYmYcwBhLLRT3iU": {"name": "BLOCKY", "decimals": 6}
 }
 
-# Get real-time token price from Birdeye API
+# Fetch price from Birdeye
 def get_token_price(token_address):
     url = f"https://public-api.birdeye.so/public/price?address={token_address}"
     headers = {"X-API-KEY": BIRDEYE_API_KEY}
@@ -30,10 +30,14 @@ def get_token_price(token_address):
         data = response.json()
         return float(data["data"]["value"])
     except Exception as e:
-        print(f"⚠️ Error fetching token price: {e}")
+        print(f"⚠️ Error fetching token price for {token_address}: {e}")
         return None
 
-# Send message via Telegram bot
+def get_sol_price():
+    sol_address = "So11111111111111111111111111111111111111112"
+    return get_token_price(sol_address)
+
+# Send Telegram message
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
@@ -84,11 +88,11 @@ def webhook():
                 decimals = token_info.get("decimals", 0)
 
                 try:
-                    amount_float = float(raw_amount) / (10 ** decimals)
-                    amount_formatted = f"{amount_float:,.{decimals}f}".rstrip('0').rstrip('.')
+                    amount_float = float(raw_amount)
+                    amount_formatted = f"{amount_float:,.0f}"
                 except:
                     amount_float = 0
-                    amount_formatted = raw_amount
+                    amount_formatted = str(raw_amount)
 
                 # Determine action type
                 if destination in MONITORED_WALLETS:
@@ -98,13 +102,14 @@ def webhook():
                 else:
                     action = "⚪ Transfer (Untracked Wallet)"
 
-                # Get price and estimate value
-                price_per_token = get_token_price(token)
-                if price_per_token and amount_float:
-                    est_value_sol = price_per_token * amount_float
-                    sol_formatted = f"{est_value_sol:,.4f}"
-                    usd_value = est_value_sol * 150  # adjust if you want live SOL price
-                    usd_formatted = f"{usd_value:,.2f}"
+                # Get token price + live SOL price
+                token_price_in_sol = get_token_price(token)
+                sol_price_usd = get_sol_price()
+                if token_price_in_sol and amount_float:
+                    value_in_sol = token_price_in_sol * amount_float
+                    sol_formatted = f"{value_in_sol:,.4f}"
+                    usd_value = value_in_sol * sol_price_usd if sol_price_usd else None
+                    usd_formatted = f"{usd_value:,.2f}" if usd_value else "N/A"
                     value_text = f"\nEst. Value: ~{sol_formatted} SOL (~${usd_formatted})"
                 else:
                     value_text = ""
