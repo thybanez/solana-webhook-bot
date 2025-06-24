@@ -28,14 +28,14 @@ def get_token_price(token_address):
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
+        print(f"📊 Token Price Response for {token_address}: {data}")
         return float(data["data"]["value"])
     except Exception as e:
         print(f"⚠️ Error fetching token price for {token_address}: {e}")
         return None
 
 def get_sol_price():
-    sol_address = "So11111111111111111111111111111111111111112"
-    return get_token_price(sol_address)
+    return get_token_price("So11111111111111111111111111111111111111112")
 
 # Send Telegram message
 def send_telegram_message(message):
