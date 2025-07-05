@@ -74,8 +74,10 @@ def webhook():
                 if not isinstance(token_transfer, dict):
                     continue
 
-                token = token_transfer.get("tokenAddress")
-                raw_amount = token_transfer.get("amount")
+                # support both old and new payload formats
+                token = token_transfer.get("tokenAddress") or token_transfer.get("mint")
+                raw_amount = token_transfer.get("amount") or token_transfer.get("tokenAmount")
+
 
                 if token not in TARGET_TOKENS:
                     continue
